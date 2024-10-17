@@ -1,7 +1,9 @@
 import os
 import shutil
 import numpy as np
+import pypdf
 from PIL import Image
+from concurrent.futures import ThreadPoolExecutor
 
 split_path = r"images"
 # List of possible color channels in tiffsep output
@@ -27,12 +29,29 @@ def organize_tiff():
                 shutil.move(os.path.join(split_path, file_name), color_folder)
 
 def split_page(pdf_path):
-    # clear the Dictionary for images to stor
+    """Splits each page of the PDF into separate color-separated images."""
+    # Clear the dictionary for storing images
     clear_path(split_path)
-    # use ghost-scrip to split each page of pdf into a separate image with the 4 main color of printing
-    os.system(fr'gswin64c -sDEVICE=tiffsep -o {split_path}\p_%d_%%c.tiff -f {pdf_path}')
-    # to organize the tiff file into separate folders
+
+    # Get the total number of pages
+    page_count = get_pdf_page_count(pdf_path)
+    # Use parallel processing to run Ghostscript for each page
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(split_single_page, pdf_path, page) for page in range(1, page_count + 1)]
+        for future in futures:
+            future.result()  # Ensure all tasks complete
+    # Organize the TIFF files into separate folders by color
     organize_tiff()
+
+def get_pdf_page_count(pdf_path):
+    """Returns the number of pages in the PDF."""
+    pdf_reader = pypdf.PdfReader(pdf_path)
+    return len(pdf_reader.pages)
+
+def split_single_page(pdf_path, page):
+    """Processes a single page by splitting it into color-separated TIFF images."""
+    os.system(
+        fr'gswin64c -q -sDEVICE=tiffsep -dFirstPage={page} -dLastPage={page} -o {split_path}\p_{page}_%%c.tiff -f {pdf_path}')
 
 def calculate_all_color():
     colo = {}
