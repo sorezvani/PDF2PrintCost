@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import subprocess
@@ -11,13 +12,32 @@ from PIL import Image
 split_path = r"images"
 # List of possible color channels in tiffsep output
 color_channels = ["Cyan", "Magenta", "Yellow", "Black"]
+log_file = r"log.txt"
 
-def clear_path(path):
+def setup_logger():
+    logger_new = logging.getLogger('GhostscriptLogger')
+    logger_new.setLevel(logging.INFO)
+
+    # File handler for logging
+    handler = logging.FileHandler(log_file, mode='a')
+    handler.setLevel(logging.INFO)
+
+    # Formatter for the logs
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+
+    # Add handler to logger
+    if not logger_new.hasHandlers():
+        logger_new.addHandler(handler)
+
+    return logger_new
+
+def clear_path(path_clear):
     # remove the whole Dictionary
-    if os.path.exists(path):
-        shutil.rmtree(path)
+    if os.path.exists(path_clear):
+        shutil.rmtree(path_clear)
     # make the Dictionary in the place with same name
-    os.mkdir(path)
+    os.mkdir(path_clear)
 
 def organize_tiff():
     # Create color-specific folders and move files
@@ -53,8 +73,18 @@ def get_pdf_page_count(pdf_path):
 
 def split_single_page(pdf_path, page):
     """Processes a single page by splitting it into color-separated TIFF images."""
-    os.system(
-        fr'gswin64c -q -sDEVICE=tiffsep -dFirstPage={page} -dLastPage={page} -o {split_path}\p_{page}_%%c.tiff -f {pdf_path}')
+    command = fr'gswin64c -q -sDEVICE=tiffsep -dFirstPage={page} -dLastPage={page} -o {split_path}\p_{page}_%%c.tiff -f {pdf_path}'
+
+    try:
+        # Execute the Ghostscript command and capture the output
+        os.system(command)
+
+        # Log success after command completes
+        logger.info(f"Page {page} split into tiff successfully.")
+
+    except Exception as e:
+        # Log any exceptions that occur
+        logger.error(f"Error processing page {page}: {e}")
 
 def calculate_all_color():
     colo = {}
@@ -101,7 +131,7 @@ def convert_page_to_grayscale(pdf_path, page_number, output_dir):
 
 def combine_pdfs(page_paths, output_pdf_path):
     """Combines all individual page PDFs into a single PDF."""
-    valid_paths = [path for _, path in sorted(page_paths) if path is not None]
+    valid_paths = [path_pdf for _, path_pdf in sorted(page_paths) if path_pdf is not None]
     if not valid_paths:
         print("No pages to combine.")
         return
@@ -152,9 +182,8 @@ def run(pdf_path):
     print("black cov :\n" , black)
     clear_path(split_path)
 
-path = r"C:\Users\Soroush\Desktop\Newfolder\2021.pdf"
-st = time.time()
-make_grayscale(path)
-print(time.time() - st)
+path = r"C:\Users\Soroush\Desktop\Newfolder\2022.pdf"
+# Setup the logger
+logger = setup_logger()
 
-
+split_page(path)
