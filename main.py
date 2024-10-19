@@ -15,6 +15,11 @@ color_channels = ["Cyan", "Magenta", "Yellow", "Black"]
 log_file = r"log.txt"
 
 def setup_logger():
+    if os.path.exists(log_file):
+        os.remove(log_file)
+    with open(log_file, "a") as f:
+        f.write("file is Created\n")
+
     logger_new = logging.getLogger('GhostscriptLogger')
     logger_new.setLevel(logging.INFO)
 
@@ -25,6 +30,7 @@ def setup_logger():
     # Formatter for the logs
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
+    logger_new.info("logger started")
 
     # Add handler to logger
     if not logger_new.hasHandlers():
@@ -55,16 +61,22 @@ def split_page(pdf_path):
     """Splits each page of the PDF into separate color-separated images."""
     # Clear the dictionary for storing images
     clear_path(split_path)
-
-    # Get the total number of pages
-    page_count = get_pdf_page_count(pdf_path)
-    # Use parallel processing to run Ghostscript for each page
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(split_single_page, pdf_path, page) for page in range(1, page_count + 1)]
-        for future in futures:
-            future.result()  # Ensure all tasks complete
-    # Organize the TIFF files into separate folders by color
-    organize_tiff()
+    logger.info(f"Started splitting for {pdf_path}")
+    try:
+        # Get the total number of pages
+        page_count = get_pdf_page_count(pdf_path)
+        # Use parallel processing to run Ghostscript for each page
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(split_single_page, pdf_path, page) for page in range(1, page_count + 1)]
+            for future in futures:
+                future.result()  # Ensure all tasks complete
+        logger.info("Split Tiffs successfully created")
+    except Exception as e:
+        logger.error(f"Error splitting pdf {pdf_path}: {e}")
+    finally:
+        # Organize the TIFF files into separate folders by color
+        organize_tiff()
+        logger.info("Split completed and organized successfully.")
 
 def get_pdf_page_count(pdf_path):
     """Returns the number of pages in the PDF."""
@@ -78,10 +90,8 @@ def split_single_page(pdf_path, page):
     try:
         # Execute the Ghostscript command and capture the output
         os.system(command)
-
         # Log success after command completes
         logger.info(f"Page {page} split into tiff successfully.")
-
     except Exception as e:
         # Log any exceptions that occur
         logger.error(f"Error processing page {page}: {e}")
@@ -92,6 +102,7 @@ def calculate_all_color():
     for color in color_channels:
         # use the calculate_coverage_for_color to get the average ink usage in all pages
         colo.update({color: calculate_coverage_for_color(os.path.join(split_path, color))})
+        logger.info(f"Color {color} calculated successfully with a coverage of {colo[color]}")
     return colo
 
 def calculate_coverage_for_color(path_images):
@@ -124,53 +135,67 @@ def convert_page_to_grayscale(pdf_path, page_number, output_dir):
 
     try:
         subprocess.run(gs_command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info(f"Page {page_number} grayscale successfully.")
         return page_number, temp_pdf_path  # Return the page number to keep track of order
     except subprocess.CalledProcessError as e:
-        print(f"Error processing page {page_number}: {e}")
+        logger.error(f"Error converting page {page_number} to grayscale: {e}")
         return page_number, None
 
 def combine_pdfs(page_paths, output_pdf_path):
     """Combines all individual page PDFs into a single PDF."""
-    valid_paths = [path_pdf for _, path_pdf in sorted(page_paths) if path_pdf is not None]
-    if not valid_paths:
-        print("No pages to combine.")
-        return
+    try:
+        valid_paths = [path_pdf for _, path_pdf in sorted(page_paths) if path_pdf is not None]
+        if not valid_paths:
+            logger.error(f"No valid paths were found for page {page_paths}")
+            return
 
-    gs_command = ["gswin64c", "-sDEVICE=pdfwrite", "-dNOPAUSE", "-dBATCH",
-                  "-sOutputFile=" + output_pdf_path] + valid_paths
-    subprocess.run(gs_command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        gs_command = ["gswin64c", "-sDEVICE=pdfwrite", "-dNOPAUSE", "-dBATCH",
+                      "-sOutputFile=" + output_pdf_path] + valid_paths
+        subprocess.run(gs_command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info("page PDFs successfully combined.")
+    except Exception as e:
+        logger.error(f"Error combining page PDFs: {e}")
 
 def make_grayscale(pdf_path):
     # Create output directory for temporary grayscale pages
     output_dir = "grayscale_pages"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Get total number of pages using Ghostscript
-    total_pages = get_pdf_page_count(pdf_path)
+    logger.info(f"Started grayscale conversion for {pdf_path}")
+    try:
+        # Get total number of pages using Ghostscript
+        total_pages = get_pdf_page_count(pdf_path)
 
-    # Use limited parallel processing to convert each page to grayscale
-    grayscale_page_paths = []
-    with ThreadPoolExecutor() as executor:  # Adjust worker count as needed
-        futures = [
-            executor.submit(convert_page_to_grayscale, pdf_path, page_num + 1, output_dir)
-            for page_num in range(total_pages)
-        ]
+        # Use limited parallel processing to convert each page to grayscale
+        grayscale_page_paths = []
+        with ThreadPoolExecutor() as executor:  # Adjust worker count as needed
+            futures = [
+                executor.submit(convert_page_to_grayscale, pdf_path, page_num + 1, output_dir)
+                for page_num in range(total_pages)
+            ]
 
-        # Collect the results and maintain the page order
-        for future in futures:
-            page_number, result = future.result()
-            if result is not None:
-                grayscale_page_paths.append((page_number, result))
+            # Collect the results and maintain the page order
+            for future in futures:
+                page_number, result = future.result()
+                if result is not None:
+                    grayscale_page_paths.append((page_number, result))
+                else:
+                    logger.error(f"Error converting page {page_number} to grayscale.")
 
-    # Combine all grayscale pages into a single PDF, ordered by page number
-    output_pdf_path = os.path.join("grayscale", "gray.pdf")
-    os.makedirs("grayscale", exist_ok=True)
-    combine_pdfs(grayscale_page_paths, output_pdf_path)
+        # Combine all grayscale pages into a single PDF, ordered by page number
+        output_pdf_path = os.path.join("grayscale", "gray.pdf")
+        os.makedirs("grayscale", exist_ok=True)
+        combine_pdfs(grayscale_page_paths, output_pdf_path)
 
-    # Clean up temporary files
-    clear_path(fr"grayscale_pages")
+        logger.info(f"Grayscale PDF successfully created: {output_pdf_path}")
 
-    print(f"Grayscale conversion completed: {output_pdf_path}")
+    except Exception as e:
+        logger.error(f"Error during grayscale conversion: {e}")
+
+    finally:
+        # Clean up temporary files
+        clear_path(r"grayscale_pages")
+        logger.info("Grayscale conversion completed and temporary files cleaned up.")
 
 def run(pdf_path):
     split_page(pdf_path)
@@ -181,9 +206,10 @@ def run(pdf_path):
     print("color cov :\n" , color)
     print("black cov :\n" , black)
     clear_path(split_path)
+    logger.info(f"PDF Coverage calculated successfully.\ncolor cov :{color} \ngrayScale cov : {black}")
 
 path = r"C:\Users\Soroush\Desktop\Newfolder\2022.pdf"
 # Setup the logger
 logger = setup_logger()
 
-split_page(path)
+run(path)
