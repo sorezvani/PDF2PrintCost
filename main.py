@@ -103,6 +103,7 @@ def calculate_all_color():
         # use the calculate_coverage_for_color to get the average ink usage in all pages
         colo.update({color: float(calculate_coverage_for_color(os.path.join(split_path, color)))})
         logger.info(f"Color {color} calculated successfully with a coverage of {colo[color]}")
+    clear_path(split_path)
     return colo
 
 def calculate_coverage_for_color(path_images):
@@ -201,7 +202,6 @@ def calculate_color_coverage(pdf_path):
     split_page(pdf_path)
     color = calculate_all_color()
     page = get_pdf_page_count(pdf_path)
-    clear_path(split_path)
     for colo in color.keys():
         color[colo] = float("{:0.2f}".format(color[colo] * page))
     logger.info(f"PDF color Coverage calculated successfully.\nCoverage : {color}")
@@ -209,7 +209,7 @@ def calculate_color_coverage(pdf_path):
 
 def calculate_grayscale_coverage(pdf_path):
     make_grayscale(pdf_path)
-    split_page(pdf_path)
+    split_page(r"grayscale/gray.pdf")
     black = calculate_all_color()
     page = get_pdf_page_count(pdf_path)
     black = black["Black"] * page
