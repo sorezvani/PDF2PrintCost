@@ -2,7 +2,6 @@ import logging
 import os
 import shutil
 import subprocess
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -37,6 +36,7 @@ def setup_logger():
         logger_new.addHandler(handler)
 
     return logger_new
+logger = setup_logger()
 
 def clear_path(path_clear):
     # remove the whole Dictionary
@@ -101,7 +101,7 @@ def calculate_all_color():
     # process each color separately
     for color in color_channels:
         # use the calculate_coverage_for_color to get the average ink usage in all pages
-        colo.update({color: calculate_coverage_for_color(os.path.join(split_path, color))})
+        colo.update({color: float(calculate_coverage_for_color(os.path.join(split_path, color)))})
         logger.info(f"Color {color} calculated successfully with a coverage of {colo[color]}")
     return colo
 
@@ -197,19 +197,21 @@ def make_grayscale(pdf_path):
         clear_path(r"grayscale_pages")
         logger.info("Grayscale conversion completed and temporary files cleaned up.")
 
-def run(pdf_path):
+def calculate_color_coverage(pdf_path):
     split_page(pdf_path)
     color = calculate_all_color()
-    make_grayscale(pdf_path)
-    split_page(r"grayscale\gray.pdf")
-    black = calculate_all_color()
-    print("color cov :\n" , color)
-    print("black cov :\n" , black)
+    page = get_pdf_page_count(pdf_path)
     clear_path(split_path)
-    logger.info(f"PDF Coverage calculated successfully.\ncolor cov :{color} \ngrayScale cov : {black}")
+    for colo in color.keys():
+        color[colo] = float("{:0.2f}".format(color[colo] * page))
+    logger.info(f"PDF color Coverage calculated successfully.\nCoverage : {color}")
+    return color
 
-path = r"C:\Users\Soroush\Desktop\Newfolder\2022.pdf"
-# Setup the logger
-logger = setup_logger()
-
-run(path)
+def calculate_grayscale_coverage(pdf_path):
+    make_grayscale(pdf_path)
+    split_page(pdf_path)
+    black = calculate_all_color()
+    page = get_pdf_page_count(pdf_path)
+    black = black["Black"] * page
+    logger.info(f"PDF grayscale Coverage calculated successfully.\nCoverage : {black}")
+    return black
